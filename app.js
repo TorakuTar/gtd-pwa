@@ -29,6 +29,7 @@ function normalize(i) {
   return {
     tags: [], urgent: false, important: false, status: 'todo',
     createdAt: 0, updatedAt: 0, doneAt: 0, deleted: false,
+    delegateChecked: false, delegateTo: '',
     ...i,
   };
 }
@@ -109,16 +110,24 @@ function card(item) {
   const r = rank(item);
   if (r) meta.appendChild(el('span', `badge r${r}`, RANK_LABEL[r]));
   if (item.list === 'next' && item.status === 'doing') meta.appendChild(el('span', 'badge doing', STATUS.doing));
+  if (item.delegateTo) meta.appendChild(el('span', 'badge doing', `依頼先: ${item.delegateTo}`));
   for (const t of item.tags) meta.appendChild(el('span', 'badge tag', t));
   if (meta.children.length) li.appendChild(meta);
 
   const row = el('div', 'row');
-  if (item.list === 'done') {
+  if (item.list === 'inbox' && !item.delegateChecked) {
+    // 受信箱に入ったものは、まず「他の人に頼めないか」を答えるまで先へ進めない
+    li.appendChild(el('div', 'ask', 'これは、他の人に頼めませんか？'));
+    row.appendChild(btn('頼む（連絡待ちへ）', () => delegate(item.id), 'primary'));
+    row.appendChild(btn('自分でやる', () => patch(item.id, i => { i.delegateChecked = true; })));
+  } else if (item.list === 'done') {
     row.appendChild(btn('← 次にやる', () => patch(item.id, i => { i.list = 'next'; i.doneAt = 0; })));
   } else {
     for (const [id, label] of Object.entries(LISTS)) {
       if (id === 'inbox' || id === 'done' || id === item.list) continue;
-      row.appendChild(btn(`→ ${label}`, () => patch(item.id, i => { i.list = id; })));
+      row.appendChild(btn(`→ ${label}`, id === 'waiting'
+        ? () => delegate(item.id)
+        : () => patch(item.id, i => { i.list = id; })));
     }
     row.appendChild(btn('完了', () => patch(item.id, i => { i.list = 'done'; i.doneAt = Date.now(); })));
   }
@@ -161,6 +170,105 @@ function detail(item) {
   }, 'danger'));
   return d;
 }
+
+function delegate(id) {
+  const who = prompt('誰に頼みますか？（空欄でも可）');
+  if (who === null) return;
+  patch(id, i => { i.list = 'waiting'; i.delegateTo = who.trim(); i.delegateChecked = true; });
+}
+
+// ---- PCからの取り込み・書き出し ----
+function parseTable(text) {
+  text = text.replace(/^﻿/, '');
+  const d = text.split('\n', 1)[0].includes('\t') ? '\t' : ',';
+  const rows = [];
+  let row = [], cell = '', q = false;
+  for (let k = 0; k < text.length; k++) {
+    const c = text[k];
+    if (q) {
+      if (c === '"') { if (text[k + 1] === '"') { cell += '"'; k++; } else q = false; }
+      else cell += c;
+    } else if (c === '"' && cell === '') q = true;
+    else if (c === d) { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[k + 1] === '\n') k++;
+      row.push(cell); cell = ''; rows.push(row); row = [];
+    } else cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(c => c.trim()));
+}
+
+function importText(text) {
+  const rows = parseTable(text);
+  if (!rows.length) { alert('取り込める行がありません。'); return; }
+  let cols = ['タスク', 'タグ', '緊急', '重要', '依頼先'];
+  if (rows[0][0].trim() === 'タスク') cols = rows.shift().map(s => s.trim());
+  const get = (r, name) => (r[cols.indexOf(name)] || '').trim();
+  const yes = v => /^(1|○|〇|◯|はい|y|yes|true|高)$/i.test(v);
+  const now = Date.now();
+
+  const made = [];
+  rows.forEach((r, n) => {
+    const text = get(r, 'タスク');
+    if (!text) return;
+    const who = get(r, '依頼先');
+    made.push(normalize({
+      id: (now - n).toString(36) + Math.random().toString(36).slice(2, 6),
+      text,
+      tags: get(r, 'タグ').split(/[|｜、]/).map(s => s.trim()).filter(Boolean),
+      urgent: yes(get(r, '緊急')),
+      important: yes(get(r, '重要')),
+      list: who ? 'waiting' : 'inbox',
+      delegateTo: who,
+      delegateChecked: !!who,
+      createdAt: now - n, updatedAt: now,
+    }));
+  });
+  if (!made.length) { alert('タスク名のある行がありません。'); return; }
+
+  const sample = made.slice(0, 3).map(m => `・${m.text}`).join('\n');
+  if (!confirm(`${made.length}件を取り込みます。\n${sample}${made.length > 3 ? '\n…' : ''}`)) return;
+
+  for (const m of made) for (const t of m.tags) if (!tags.includes(t)) tags.push(t);
+  items.unshift(...made);
+  current = 'inbox';
+  save(); render();
+  $('paste').value = '';
+  $('tools').open = false;
+}
+
+async function readFile(f) {
+  const buf = await f.arrayBuffer();
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch { return new TextDecoder('shift_jis').decode(buf); } // Excel既定のCSV
+}
+
+function exportCSV() {
+  const esc = v => {
+    v = String(v ?? '');
+    return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  };
+  const head = ['タスク', 'タグ', '緊急', '重要', '依頼先', 'リスト', '進捗'];
+  const lines = [head, ...items.filter(i => !i.deleted).map(i => [
+    i.text, i.tags.join('|'), i.urgent ? '○' : '', i.important ? '○' : '',
+    i.delegateTo, LISTS[i.list], i.list === 'next' ? STATUS[i.status] : '',
+  ])].map(r => r.map(esc).join(','));
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `gtd-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+$('file').onchange = async e => {
+  const f = e.target.files[0];
+  if (f) $('paste').value = await readFile(f);
+  e.target.value = '';
+};
+$('doImport').onclick = () => importText($('paste').value);
+$('doExport').onclick = exportCSV;
 
 function addTag() {
   const name = (prompt('新しい場所・状況の名前') || '').trim();
