@@ -254,8 +254,9 @@ function downloadCSV(rows, name) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;
+  document.body.appendChild(a);
   a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 10000);
 }
 
 function exportCSV() {
@@ -266,15 +267,6 @@ function exportCSV() {
   ])], `gtd-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
-function downloadTemplate() {
-  downloadCSV([
-    ['タスク', 'タグ', '緊急', '重要', '依頼先'],
-    ['（例）見積書を作る', '会社|PC', '○', '○', ''],
-    ['（例）歯医者を予約する', '電話', '', '○', ''],
-    ['（例）資料を印刷する', '会社', '', '', '佐藤さん'],
-  ], 'gtd-template.csv');
-}
-
 $('file').onchange = async e => {
   const f = e.target.files[0];
   if (f) $('paste').value = await readFile(f);
@@ -282,7 +274,6 @@ $('file').onchange = async e => {
 };
 $('doImport').onclick = () => importText($('paste').value);
 $('doExport').onclick = exportCSV;
-$('doTemplate').onclick = downloadTemplate;
 
 function addTag() {
   const name = (prompt('新しい場所・状況の名前') || '').trim();
