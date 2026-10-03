@@ -274,6 +274,18 @@ $('file').onchange = async e => {
 };
 $('doImport').onclick = () => importText($('paste').value);
 $('doExport').onclick = exportCSV;
+// ダウンロードできない環境向け：見出し行をコピーし、ExcelのA1セルへ貼り付ければ5列に分かれる
+$('copyHead').onclick = async () => {
+  const head = ['タスク', 'タグ', '緊急', '重要', '依頼先'].join('\t');
+  try {
+    await navigator.clipboard.writeText(head);
+    alert('見出しをコピーしました。Excelの A1 セルに貼り付けてください。');
+  } catch {
+    $('paste').value = head;
+    $('paste').select();
+    alert('コピーできませんでした。下の入力欄に見出しを出したので、手動でコピーしてください。');
+  }
+};
 
 function addTag() {
   const name = (prompt('新しい場所・状況の名前') || '').trim();
