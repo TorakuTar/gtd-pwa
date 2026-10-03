@@ -244,22 +244,35 @@ async function readFile(f) {
   catch { return new TextDecoder('shift_jis').decode(buf); } // Excel既定のCSV
 }
 
-function exportCSV() {
+function downloadCSV(rows, name) {
   const esc = v => {
     v = String(v ?? '');
     return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
   };
-  const head = ['タスク', 'タグ', '緊急', '重要', '依頼先', 'リスト', '進捗'];
-  const lines = [head, ...items.filter(i => !i.deleted).map(i => [
-    i.text, i.tags.join('|'), i.urgent ? '○' : '', i.important ? '○' : '',
-    i.delegateTo, LISTS[i.list], i.list === 'next' ? STATUS[i.status] : '',
-  ])].map(r => r.map(esc).join(','));
-  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv' });
+  const csv = rows.map(r => r.map(esc).join(',')).join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `gtd-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function exportCSV() {
+  const head = ['タスク', 'タグ', '緊急', '重要', '依頼先', 'リスト', '進捗'];
+  downloadCSV([head, ...items.filter(i => !i.deleted).map(i => [
+    i.text, i.tags.join('|'), i.urgent ? '○' : '', i.important ? '○' : '',
+    i.delegateTo, LISTS[i.list], i.list === 'next' ? STATUS[i.status] : '',
+  ])], `gtd-${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+function downloadTemplate() {
+  downloadCSV([
+    ['タスク', 'タグ', '緊急', '重要', '依頼先'],
+    ['（例）見積書を作る', '会社|PC', '○', '○', ''],
+    ['（例）歯医者を予約する', '電話', '', '○', ''],
+    ['（例）資料を印刷する', '会社', '', '', '佐藤さん'],
+  ], 'gtd-template.csv');
 }
 
 $('file').onchange = async e => {
@@ -269,6 +282,7 @@ $('file').onchange = async e => {
 };
 $('doImport').onclick = () => importText($('paste').value);
 $('doExport').onclick = exportCSV;
+$('doTemplate').onclick = downloadTemplate;
 
 function addTag() {
   const name = (prompt('新しい場所・状況の名前') || '').trim();
