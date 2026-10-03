@@ -27,6 +27,21 @@
   .row { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
   .row button { padding:4px 10px; border:1px solid var(--line); background:transparent; color:var(--fg); border-radius:6px; font:inherit; font-size:13px; }
   .empty { color:var(--muted); text-align:center; padding:24px 0; }
+  nav button { font-size:12px; padding:10px 2px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  .detail .chips { margin-bottom:8px; }
+  .chip { padding:4px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:999px; font:inherit; font-size:13px; }
+  .chip[aria-pressed="true"] { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .add-tag { color:var(--muted); border-style:dashed; }
+  .meta { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+  .badge { font-size:11px; padding:1px 8px; border-radius:999px; border:1px solid var(--line); color:var(--muted); }
+  .badge.r3 { background:#c0392b; border-color:#c0392b; color:#fff; }
+  .badge.r2 { background:#d68910; border-color:#d68910; color:#fff; }
+  .badge.r1 { background:#2e86c1; border-color:#2e86c1; color:#fff; }
+  .badge.doing { color:var(--accent); border-color:var(--accent); }
+  .detail { margin-top:10px; padding-top:8px; border-top:1px dashed var(--line); }
+  .label { font-size:12px; color:var(--muted); margin-bottom:4px; }
+  .row button.danger, button.danger { padding:4px 10px; border:1px solid #c0392b; background:transparent; color:#c0392b; border-radius:6px; font:inherit; font-size:13px; }
 </style>
 </head>
 <body>
@@ -36,6 +51,7 @@
     <input id="input" placeholder="頭に浮かんだことを、まず受信箱へ" autocomplete="off">
     <button class="add" type="submit">追加</button>
   </form>
+  <div id="filter" class="chips" aria-label="場所・状況で絞り込み"></div>
   <ul id="list"></ul>
 </main>
 <script src="app.js"></script>
