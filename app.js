@@ -6,12 +6,20 @@ const LISTS = {
   done: '完了',
 };
 const STATUS = { todo: '未着手', doing: '進行中' };
-const DEFAULT_TAGS = ['自宅', '会社', 'PC', '外出先', '電話'];
+const DEFAULT_TAGS = ['自宅', '会社(オフィス)', '会社(現場)', 'PC', '外出先', '電話'];
+// 分割済みのタグ。古いタグ名は、新しい名前すべてに置き換える（取り込み時も同様）
+const SPLIT_TAGS = { '会社': ['会社(オフィス)', '会社(現場)'] };
 const KEY = 'gtd-items-v1';
 const TAG_KEY = 'gtd-tags-v1';
 
+const expandTags = arr => [...new Set(arr.flatMap(t => SPLIT_TAGS[t] || [t]))];
+
 let items = load(KEY, []).map(normalize);
-let tags = load(TAG_KEY, DEFAULT_TAGS);
+let tags = expandTags(load(TAG_KEY, DEFAULT_TAGS));
+for (const i of items) {
+  if (i.tags.some(t => SPLIT_TAGS[t])) { i.tags = expandTags(i.tags); i.updatedAt = Date.now(); }
+}
+save();
 let current = 'inbox';
 let filterTag = null;
 let openId = null;
@@ -216,7 +224,7 @@ function importText(text) {
     made.push(normalize({
       id: (now - n).toString(36) + Math.random().toString(36).slice(2, 6),
       text,
-      tags: get(r, 'タグ').split(/[|｜、]/).map(s => s.trim()).filter(Boolean),
+      tags: expandTags(get(r, 'タグ').split(/[|｜、]/).map(s => s.trim()).filter(Boolean)),
       urgent: yes(get(r, '緊急')),
       important: yes(get(r, '重要')),
       list: who ? 'waiting' : 'inbox',
