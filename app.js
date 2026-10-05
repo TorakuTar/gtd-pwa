@@ -149,6 +149,21 @@ function card(item) {
 function detail(item) {
   const d = el('div', 'detail');
 
+  d.appendChild(el('div', 'label', 'タスク名'));
+  const edit = el('form', 'edit');
+  const field = el('input');
+  field.value = item.text;
+  field.setAttribute('aria-label', 'タスク名');
+  const ok = btn('保存', null, 'primary');
+  ok.type = 'submit';
+  edit.append(field, ok);
+  edit.onsubmit = e => {
+    e.preventDefault();
+    const text = field.value.trim();
+    if (text && text !== item.text) patch(item.id, i => { i.text = text; });
+  };
+  d.appendChild(edit);
+
   d.appendChild(el('div', 'label', '緊急度・重要度'));
   const pr = el('div', 'chips');
   pr.appendChild(toggle('緊急', item.urgent, () => patch(item.id, i => { i.urgent = !i.urgent; })));
