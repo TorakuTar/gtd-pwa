@@ -316,6 +316,100 @@ form.onsubmit = e => {
   save(); render();
 };
 
+// ---- クラウド同期（Firebase）----
+// 設定値は公開前提の情報。データを守るのはログインと、Firestore側のセキュリティルール。
+const FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyAFtaFQl_O1IVHRjBPIvOdC4zYWUgfkNTo',
+  authDomain: 'gtd-app-7ede9.firebaseapp.com',
+  projectId: 'gtd-app-7ede9',
+  storageBucket: 'gtd-app-7ede9.firebasestorage.app',
+  messagingSenderId: '394864348244',
+  appId: '1:394864348244:web:1be1ba294e5cacfdd8b1c1',
+};
+const SDK_BASE = 'https://www.gstatic.com/firebasejs/10.14.1/';
+const SYNC_KEY = 'gtd-last-sync';
+let fb = null;
+
+// 同じタスクは「更新が新しいほう」を採用する。削除も印（deleted）として同期される。
+function mergeItems(local, remote) {
+  const rm = new Map(remote.map(r => [r.id, r]));
+  const lm = new Map(local.map(l => [l.id, l]));
+  const merged = [], push = [];
+  let pulled = 0;
+  for (const l of local) {
+    const r = rm.get(l.id);
+    if (!r || l.updatedAt > r.updatedAt) { merged.push(l); push.push(l); }
+    else if (r.updatedAt > l.updatedAt) { merged.push(normalize(r)); pulled++; }
+    else merged.push(l);
+  }
+  for (const r of remote) {
+    if (!lm.has(r.id)) { merged.push(normalize(r)); pulled++; }
+  }
+  return { merged, push, pulled };
+}
+
+// オフラインでもアプリが開けるよう、同期ボタンを押したときだけ読み込む
+async function loadFirebase() {
+  if (fb) return fb;
+  const [app, auth, fs] = await Promise.all([
+    import(SDK_BASE + 'firebase-app.js'),
+    import(SDK_BASE + 'firebase-auth.js'),
+    import(SDK_BASE + 'firebase-firestore.js'),
+  ]);
+  const a = app.initializeApp(FIREBASE_CONFIG);
+  fb = { auth: auth.getAuth(a), db: fs.getFirestore(a), A: auth, F: fs };
+  return fb;
+}
+
+function syncStatus(msg) { $('syncStatus').textContent = msg; }
+function lastSyncText() {
+  const t = Number(localStorage.getItem(SYNC_KEY));
+  if (!t) return '未同期';
+  const d = new Date(t);
+  return `最終同期 ${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+async function syncNow() {
+  if (!navigator.onLine) { syncStatus('オフラインです'); return; }
+  const btn = $('syncBtn');
+  btn.disabled = true;
+  syncStatus('同期中…');
+  try {
+    const { auth, db, A, F } = await loadFirebase();
+    await auth.authStateReady();
+    if (!auth.currentUser) await A.signInWithPopup(auth, new A.GoogleAuthProvider());
+    const uid = auth.currentUser.uid;
+
+    const col = F.collection(db, 'users', uid, 'items');
+    const remote = (await F.getDocs(col)).docs.map(d => d.data());
+    const { merged, push, pulled } = mergeItems(items, remote);
+    for (let k = 0; k < push.length; k += 400) {
+      const batch = F.writeBatch(db);
+      for (const it of push.slice(k, k + 400)) batch.set(F.doc(col, it.id), it);
+      await batch.commit();
+    }
+
+    const tagRef = F.doc(db, 'users', uid, 'meta', 'tags');
+    const snap = await F.getDoc(tagRef);
+    const remoteTags = snap.exists() ? snap.data().list : [];
+    const mergedTags = [...new Set([...tags, ...remoteTags])];
+    if (mergedTags.length !== remoteTags.length) await F.setDoc(tagRef, { list: mergedTags });
+
+    items = merged;
+    tags = mergedTags;
+    save(); render();
+    localStorage.setItem(SYNC_KEY, String(Date.now()));
+    syncStatus(`同期しました（送信${push.length}件・受信${pulled}件）`);
+  } catch (e) {
+    syncStatus(`同期に失敗しました：${e.code || e.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$('syncBtn').onclick = syncNow;
+syncStatus(lastSyncText());
+
 render();
 
 if ('serviceWorker' in navigator) {
